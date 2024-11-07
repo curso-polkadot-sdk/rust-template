@@ -11,6 +11,8 @@ Esse projeto já vem com uma configuração padrão para as seguintes ferramenta
   - javascript (.js)
   - dockerfiles.
 - [clippy](https://github.com/rust-lang/rust-clippy): Coleção de lints para detectar erros comuns e melhorar seu código Rust.
+- [cargo-deny](https://github.com/EmbarkStudios/cargo-deny): plugin que analisa o gráfico de dependências do seu projeto para garantir que todas as suas dependências estejam de acordo com suas expectativas e requisitos.
+- [shellcheck](https://github.com/koalaman/shellcheck): Análise estática de shell scripts.
 
 ## Dependencias
 Certifique que o rust esta instalado: https://www.rust-lang.org/tools/install
