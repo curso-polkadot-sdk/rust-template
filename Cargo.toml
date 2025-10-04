@@ -1,5 +1,5 @@
 [workspace]
-members = ["hello-wrold"]
+members = ["hello-world"]
 resolver = "2"
 
 [profile.release]
