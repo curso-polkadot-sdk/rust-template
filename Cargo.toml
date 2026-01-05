@@ -1,3 +1,8 @@
+[workspace.package]
+authors = ["Lohann Paterno Coutinho Ferreira <developer@lohann.dev>"]
+edition = "2021"
+repository = "https://github.com/curso-polkadot-sdk/rust-template.git"
+
 [workspace]
 members = ["hello-world"]
 resolver = "2"
