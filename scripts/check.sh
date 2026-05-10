@@ -40,7 +40,6 @@ PS4='+ '
 LC_ALL=C; export LC_ALL
 LANGUAGE=C; export LANGUAGE
 LANG=en_US.UTF-8; export LANG
-test "${_var_can_reexec+y}" || unset LINENO
 
 # We cannot yet rely on "unset" to work, but we need these variables
 # to be unset--not just set to an empty or harmless value--now, to
@@ -155,25 +154,32 @@ test -d "$var_basedir" ||
 
 # Check if myself.lineno exists and is newer
 case $var_myself in
-  *.lineno) _var_can_reexec=no; export _var_can_reexec ;;
-  *) : ;;
+  *.lineno)
+    _var_can_reexec=no
+    export _var_can_reexec
+    ;;
+  *)
+    if test "x${_var_can_reexec}" != xno &&
+    test -f "${var_myself}.lineno" &&
+    test -x "${var_myself}.lineno"
+    then
+      d0=`stat -c %Y "$var_myself" 2>&1` &&
+      d1=`stat -c %Y "${var_myself}.lineno" 2>&1` &&
+      test "$d0" -lt "$d1" >/dev/null 2>/dev/null && {
+        printf '%s\n' "loading ${var_myself}.lineno"
+        unset var_basedir var_me d0 d1
+        # Ensure we don't try to do so again and fall in an infinite loop.
+        _var_can_reexec=no; export _var_can_reexec
+        # shellcheck disable=SC1090
+        . "${var_myself}.lineno"
+        exit
+      } || :
+      d0=; unset d0
+      d1=; unset d1
+    else :
+    fi
+    ;;
 esac
-test "${_var_can_reexec+y}" ||
-test -f "${var_myself}.lineno" &&
-test -x "${var_myself}.lineno" &&
-d0=`stat -c %Y "$var_myself" 2>&1` &&
-d1=`stat -c %Y "${var_myself}.lineno" 2>&1` &&
-test "$d0" -lt "$d1" >/dev/null 2>/dev/null && {
-  printf '%s\n' "loading ${var_myself}.lineno"
-  unset 'var_basedir' 'var_me' 'd0' 'd1'
-  # Ensure we don't try to do so again and fall in an infinite loop.
-  _var_can_reexec=no; export _var_can_reexec
-  # shellcheck disable=SC1090
-  . "${var_myself}.lineno"
-  exit
-} || :
-d0=; unset d0
-d1=; unset d1
 
 # Check if the shell supports LINENO, otherwise
 # replace all $LINENO ocurrences by the line number.
