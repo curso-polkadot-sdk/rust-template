@@ -537,25 +537,6 @@ command \`set '+$var_opt'\` failed with status $?"; fn_exit 1; }
   fi
 } # fn_path_lookup
 
-# fn_find_bin [<BIN_1> <BIN_2> ...]
-# ---------------
-# Find a binary given a priority
-fn_find_bin ()
-{
-    v=''
-    for v; do
-        if eval 'v="$(command -v "${v}" 2>&1)"'
-        then break
-        else v=''
-        fi
-    done
-    # shellcheck disable=SC2310
-    if test -n "${v}" && as_fn_executable_p "${v}"
-    then printf '%s' "${v}"
-    else fn_exit 1
-    fi
-} # fn_find_bin
-
 # fn_sanitize_filename <STRING>
 # ---------------
 # replace non-alphanumeric characteres by '-'
@@ -591,14 +572,15 @@ fn_dquote_escape ()
   while test "$#" -gt 0
   do
     # 'x<STRING>x' forces 'sed' to preserve leading and trailing spaces.
-    printf 'x%sx' "${1}" | LC_ALL=C sed '{
+    printf x%sx "${1}" | LC_ALL=C sed '
       1s/^x//
       $s/x$//
       s/[\\$`"]/\\&/g
-    }' || return "$?"
+    ' || return "$?"
     test "$#" -gt 1 || return 0
     printf ' ' && shift || return "$?"
   done
+  echo "fn_dquote_escape:$LINENO: no args" >&2; return 127
 } # fn_dquote_escape
 
 # fn_assign_args <VARNAME> [...ARGS]
@@ -635,82 +617,6 @@ fn_eval_assign ()
   eval "set x '${1}' \"\${${1}}\" && shift" || return 125
   eval "${1}=\`eval \"\$2\"\` && eval \"${1}=\$${1}\"" || return 125
 } # fn_eval_assign
-
-# fn_repeat <text> <n>
-# ---------------
-# print `text` `n` times
-fn_repeat ()
-{
-  test "$#" -eq 2 && test "x${1}" != x && test 0 -le "${2}" || return 127
-  fn_locals_declare 'count' 'double' 'text' || return "$?"
-  text=
-  count=0
-  double=${1}
-  fn_arith count 0 '+' "${2}" || { fn_locals_release; return "$?"; }
-  while test "${count}" -gt 0
-  do
-    case $count in
-      *[13579]) fn_append 'text' "${double}" || { fn_locals_release; return "$?"; } ;;
-      *) : ;;
-    esac
-    fn_arith count "${count}" '/' 2 &&
-    fn_append 'double' "${double}" || { fn_locals_release; return "$?"; }
-  done
-  printf '%s' "${text}"
-  fn_locals_release || return "$?"
-} # fn_repeat
-
-# fn_fmt_command <command> [args...]
-# ---------------
-# break a command in multiple lines if it doesn't fit in 80 columns.
-fn_fmt_command ()
-{
-  v="$*"
-  if test "${#v}" -gt 80
-  then
-    if test "$#" -gt 1
-    then printf -- '$ %s \\\n' "${1}"
-    else printf -- '$ %s\n' "${1}"
-    fi
-    shift;
-    while test "$#" -gt '0'
-    do
-      if test "$#" -gt '1'
-      then printf -- '     %s \\\n' "${1}"
-      else printf -- '     %s\n' "${1}"
-      fi
-      shift;
-    done
-  else
-    echo "\$ ${v}"
-  fi
-} # fn_fmt_command
-
-# fn_show_header <SEPARATOR> <TITLE> <COLUMNS>
-# ---------------
-# display header
-fn_show_header ()
-{
-  fn_locals_declare 'value' 'as_val'
-  value=
-  as_val=
-  fn_as_arith value "${#2}" '+' 2
-  fn_as_arith as_val 0 '+' "${3}"
-  if test "${value}" -lt "${as_val}"; then
-    fn_as_arith as_val "${3}" '-' "${#2}"
-    fn_as_arith as_val "${as_val}" '-' 2
-    fn_as_arith as_val "${as_val}" '/' 2
-    value="$(fn_repeat "${1}" "${as_val}")"
-    fn_as_arith as_val "${#2}" '%' 2
-    if test "${as_val}" = 1
-    then printf '%s %s %s\n' "${value}" "${2}" "${value}${1}"
-    else printf '%s %s %s\n' "${value}" "${2}" "${value}"
-    fi
-  else
-    printf '%s\n' "${2}"
-  fi
-  fn_locals_release
-} # fn_show_header
 
 # fn_map <function> [items...]
 # ---------------
@@ -1036,31 +942,6 @@ fn_cd ()
   esac
 } # fn_cd
 
-# _fn_exec_print <VARNAME> <OUTPUT>
-# ----------------------
-# TODO
-_fn_exec_output()
-{
-  { test "$#" -eq 2 && test "x${2}" != x; } || return 0
-  test "x${2}" != "x''" || eval "${1}=" || return 0
-  eval "set x '${1}' ${2}" 2> /dev/null || return 0
-  eval "${2}=\"--------------------------------------------------------------------------------
-\${3}================================================================================\"" || :
-} # _fn_exec_print
-
-# _fn_exec <VARNAME> <COMMAND> [...ARGUMENTS]
-# ----------------------
-# TODO
-_fn_exec()
-{
-  var_status=0
-  printf x
-  "$@" 2>&1 || var_status=$?
-  printf x
-  fn_set_status "${var_status}"
-  return "${var_status}"
-} # _fn_exec
-
 # fn_ifs_split <VARNAME> <IFS> [...ARGS]
 # ----------------------
 # Check if <VARNAME> is a valid shell variable name
@@ -1272,6 +1153,9 @@ fn_fmt_var()
   eval "shift && fn_eval_assign '$1' 'fn_printf' \"\$@\""
 } # fn_fmt_var
 
+# fn_fmt_filesize <VARNAME> <SIZE_IN_BYTES>
+# ----------------------------------------
+# Convert bytes to a humam friendly kb or mb string.
 fn_fmt_filesize ()
 {
   test "$#" -eq 2 || fn_abort 1 "${var_lineno-$LINENO}" "fn_fmt_filesize:$LINENO: expected 2 arguments, provided $#"
@@ -1284,7 +1168,7 @@ fn_fmt_filesize ()
     fn_arith "$1" '(' 1023 '+' "$2" ')' '/' 1024 || fn_abort 1 "${var_lineno-$LINENO}" "fn_fmt_filesize:$LINENO: fn_arith failed"
     eval "$1=\${${1}}KB" || fn_abort 1 "${var_lineno-$LINENO}" "fn_fmt_filesize:$LINENO: eval failed"
   fi
-}
+} #fn_fmt_filesize
 
 # fn_fmt_array <VARNAME> <FMT> [...ARGS]
 # ----------------------------------------
