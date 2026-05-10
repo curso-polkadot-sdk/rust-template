@@ -202,6 +202,7 @@ test "x`expr $a'$_var_can_reexec' + 1`" = "x$b'$_var_can_reexec'"') 2> /dev/null
   { printf "%s\n" "$var_me: error: cannot create '$var_myself.lineno'" >&2; set +e; exit 1; }
   # shellcheck disable=SC1090
   chmod +x "${var_myself}.lineno" ||
+  { printf "%s\n" "$var_me: error: command failed 'chmod +x $var_myself.lineno'" >&2; set +e; exit 1; }
   # Ensure we don't try to do so again and fall in an infinite loop.
   _var_can_reexec=no; export _var_can_reexec
   # Don't try to exec as it changes $[0], causing all sort of problems
