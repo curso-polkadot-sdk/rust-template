@@ -40,6 +40,7 @@ PS4='+ '
 LC_ALL=C; export LC_ALL
 LANGUAGE=C; export LANGUAGE
 LANG=en_US.UTF-8; export LANG
+test "${_var_can_reexec+y}" || unset LINENO
 
 # We cannot yet rely on "unset" to work, but we need these variables
 # to be unset--not just set to an empty or harmless value--now, to
@@ -96,12 +97,121 @@ test x"$blah" = xblah') > /dev/null 2>&1 ||
 # Succeed if the currently executing shell supports 'test -x'
 (eval "test -x / || exit 1") > /dev/null 2>&1 ||
 { echo "shell doesn't support 'test -x <file>'" >&2; exit 1; }
-# Succeed if the currently executing shell supports LINENO.
-(v="a=";v=$v$LINENO;v=$v"
-b=";v=$v$LINENO;v=$v'
-test "x$a" != "x$b" && test "x`expr $a + 1`" = "x$b" && exit 0
-exit 1';eval "$v") 2> /dev/null ||
-{ echo "shell doesn't support LINENO" >&2; exit 1; }
+
+# Find who we are. Look in the path if we contain no directory separator.
+var_me=
+var_myself=
+var_basedir=
+var_sep=
+var_prev=
+var_ifs=$IFS
+case $0 in
+  *[\\/]* )
+    IFS=/
+    for var_me in $0
+    do
+      var_basedir=$var_basedir$var_prev
+      var_prev=$var_sep$var_me
+      var_sep=/
+    done
+    IFS=$var_ifs
+    test "x$var_basedir" != x || { var_basedir=$var_sep; var_sep=;}
+    ;;
+  *)
+    IFS=$PATH_SEPARATOR
+    for var_basedir in $PATH
+    do
+      IFS=$var_ifs
+      case $var_basedir in
+        '') var_basedir=. var_sep=/ ;;
+         /) var_sep= ;;
+        */)
+          var_prev=$var_basedir var_basedir= var_sep= IFS=/
+          for var_prev in $var_prev
+          do var_basedir=$var_basedir$var_sep$var_prev var_sep=/
+          done
+          IFS=$var_ifs ;;
+        * ) var_sep=/ ;;
+      esac
+      { test -r "$var_basedir$var_sep$0" && var_me=$0 && break; } || :
+      var_basedir=
+      var_sep=
+    done
+    IFS=$var_ifs
+    ;;
+esac
+var_myself=$var_basedir$var_sep$var_me
+var_prev=; unset var_prev
+var_sep=; unset var_sep
+var_ifs=; unset var_ifs
+
+# We did not find ourselves, most probably we were run as `sh COMMAND'
+# in which case we are not to be found in the path.
+test "x$var_myself" != x || var_myself=$0
+test -f "$var_myself" ||
+{ printf "%s\n" "$var_myself: error: cannot find myself; rerun with an absolute file name" >&2; exit 1; }
+test -d "$var_basedir" ||
+{ printf "%s\n" "$var_basedir: error: cannot find base directory; rerun with an absolute file name" >&2; exit 1; }
+
+# Check if myself.lineno exists and is newer
+case $var_myself in
+  *.lineno) _var_can_reexec=no; export _var_can_reexec ;;
+  *) : ;;
+esac
+test "${_var_can_reexec+y}" ||
+test -f "${var_myself}.lineno" &&
+test -x "${var_myself}.lineno" &&
+d0=`stat -c %Y "$var_myself" 2>&1` &&
+d1=`stat -c %Y "${var_myself}.lineno" 2>&1` &&
+test "$d0" -lt "$d1" >/dev/null 2>/dev/null && {
+  printf '%s\n' "loading ${var_myself}.lineno"
+  unset 'var_basedir' 'var_me' 'd0' 'd1'
+  # Ensure we don't try to do so again and fall in an infinite loop.
+  _var_can_reexec=no; export _var_can_reexec
+  # shellcheck disable=SC1090
+  . "${var_myself}.lineno"
+  exit
+} || :
+d0=; unset d0
+d1=; unset d1
+
+# Check if the shell supports LINENO, otherwise
+# replace all $LINENO ocurrences by the line number.
+(a=$LINENO ano=$LINENO
+b=$LINENO bno=$LINENO
+eval 'test "x$a'$_var_can_reexec'" != "x$b'$_var_can_reexec'" &&
+test "x`expr $a'$_var_can_reexec' + 1`" = "x$b'$_var_can_reexec'"') 2> /dev/null || {
+  test "${_var_can_reexec+y}" &&
+  { echo "shell doesn't support LINENO" >&2; set +e; exit 1; } || :
+  # Blame Lee E. McMahon (1931-1989) for sed's syntax.  :-)
+  # shellcheck disable=SC1090
+  sed -n '
+    p
+    /[$]LINENO/=
+  ' <"$var_myself" | sed '
+    s/[$]LINENO.*/&-/
+    t lineno
+    b
+    :lineno
+    N
+    :loop
+    s/[$]LINENO\([^abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_].*\n\)\(.*\)/\2\1\2/
+    t loop
+    s/-\n.*//
+  ' > "${var_myself}.lineno" ||
+  { printf "%s\n" "$var_me: error: cannot create '$var_myself.lineno'" >&2; set +e; exit 1; }
+  # shellcheck disable=SC1090
+  chmod +x "${var_myself}.lineno" ||
+  # Ensure we don't try to do so again and fall in an infinite loop.
+  _var_can_reexec=no; export _var_can_reexec
+  # Don't try to exec as it changes $[0], causing all sort of problems
+  # (the dirname of $[0] is not the place where we might find the
+  # original and so on.  Autoconf is especially sensitive to this).
+  # shellcheck disable=SC1090
+  . "$var_myself.lineno"
+  # Exit status is that of the last command.
+  exit
+}
 
 #################################
 ## SHELL FUNCTIONS AND HELPERS ##
@@ -258,61 +368,6 @@ fn_locals_release ()
 ${_var_local_}=
 unset \\\"${_var_local_}\\\"\"" ||
 { echo "failed declare functions 'fn_locals_declare' and 'fn_locals_release' $?" >&2; exit 1; }
-
-# Find who we are. Look in the path if we contain no directory separator.
-fn_locals_declare 'var_me' 'var_myself' 'var_basedir' 'var_sep'
-fn_locals_declare 'var_prev' 'var_ifs'
-var_me=
-var_myself=
-var_basedir=
-var_sep=
-var_prev=
-var_ifs=$IFS
-case $0 in
-  *[\\/]* )
-    IFS=/
-    for var_me in $0
-    do
-      var_basedir=$var_basedir$var_prev
-      var_prev=$var_sep$var_me
-      var_sep=/
-    done
-    IFS=$var_ifs
-    test "x$var_basedir" != x || { var_basedir=$var_sep; var_sep=;}
-    ;;
-  *)
-    IFS=$PATH_SEPARATOR
-    for var_basedir in $PATH
-    do
-      IFS=$var_ifs
-      case $var_basedir in
-        '') var_basedir=. var_sep=/ ;;
-         /) var_sep= ;;
-        */)
-          var_prev=$var_basedir var_basedir= var_sep= IFS=/
-          for var_prev in $var_prev
-          do var_basedir=$var_basedir$var_sep$var_prev var_sep=/
-          done
-          IFS=$var_ifs ;;
-        * ) var_sep=/ ;;
-      esac
-      { test -r "$var_basedir$var_sep$0" && var_me=$0 && break; } || :
-      var_basedir=
-      var_sep=
-    done
-    IFS=$var_ifs
-    ;;
-esac
-var_myself=$var_basedir$var_sep$var_me
-test "x$var_myself" != x || var_myself=$0
-fn_locals_release
-
-# We did not find ourselves, most probably we were run as `sh COMMAND'
-# in which case we are not to be found in the path.
-test -f "$var_myself" ||
-{ printf "%s\n" "$var_myself: error: cannot find myself; rerun with an absolute file name" >&2; exit 1; }
-test -d "$var_basedir" ||
-{ printf "%s\n" "$var_basedir: error: cannot find base directory; rerun with an absolute file name" >&2; exit 1; }
 
 ## BEGIN COLORS ##
 # Colors are hardcode in the function body using eval, so they doesn't need to detect
@@ -802,6 +857,44 @@ set x '${1}' '${var_lineno-$LINENO}'"
   test -f "$1" || fn_abort 1 "${2}" "not a file '${1}'"
   test -r "$1" || fn_abort 1 "${2}" "no read permission of file '${1}'"
 } # fn_is_directory
+
+# fn_var_copy <DEST_VARNAME> <SRC_VARNAME>
+# ----------------------
+# Copy the value from SRC_VARNAME to DEST_VARNAME
+# OBS: abort if SRC_VARNAME is undefined
+fn_var_copy ()
+{
+  test "$#" -gt 0 || fn_abort 1 "${var_lineno-$LINENO}" "fn_var_copy:$LINENO: no arguments"
+  test "$#" -gt 1 || fn_abort 1 "${var_lineno-$LINENO}" "fn_var_copy:$LINENO: missing SRC_VARNAME"
+  test "$#" -eq 2 || fn_abort 1 "${var_lineno-$LINENO}" "fn_var_copy:$LINENO: extra operand '$3'"
+  # Check parameters
+  test "x${1}" != 'x' || fn_abort 1 "${var_lineno-$LINENO}" "fn_var_copy:$LINENO: DEST_VARNAME is empty"
+  test "x${2}" != 'x' || fn_abort 1 "${var_lineno-$LINENO}" "fn_var_copy:$LINENO: SRC_VARNAME is empty"
+  fn_check_varname "${1}" || fn_abort 1 "${var_lineno-$LINENO}" "fn_var_copy:$LINENO: invalid dest variable name '${1}'"
+  fn_check_varname "${2}" || fn_abort 1 "${var_lineno-$LINENO}" "fn_var_copy:$LINENO: invalid src variable name '${2}'"
+  eval "test \${${2}+y}" || fn_abort 1 "${var_lineno-$LINENO}" "fn_var_copy:$LINENO: src variable '$2' is undefined"
+  eval "${1}=\${${2}}" || fn_abort 1 "${var_lineno-$LINENO}" "fn_var_copy:$LINENO: failed to assign '$2' to '$1'"
+}
+
+# fn_var_exists [..VARNAMES]
+# ----------------------------------------
+# Returns status 0 if all provided VARNAMES are defined and non empty.
+fn_var_exists ()
+{
+  while test "$#" -gt 0; do
+    # Check varname
+    fn_check_varname "${1}" || return "$?"
+    # Return 1 if variable is undefined
+    eval "test \"\${${1}+y}\"" || return 1
+    # Return 2 if variable is empty
+    eval "test \"x\${${1}}\" != 'x'" || return 2
+    # Return if there's no more variables
+    test "$#" -gt 1 || return 0
+    shift 2>/dev/null || fn_abort 1 "${var_lineno-$LINENO}" "fn_var_exists:$LINENO: shift failed $?"
+  done
+  fn_abort 1 "${var_lineno-$LINENO}" "fn_var_exists:$LINENO: no arguments"
+} # fn_var_exists
+
 # fn_stack_exists <STACKNAME>
 # ----------------------
 # Check if the STACKNAME exists and is valid, returns status 0 if stack
@@ -816,8 +909,8 @@ fn_stack_exists ()
   # check if the stack is empty
   eval "fn_var_exists '${1}_begin' '${1}_end'" || return 1
   # check if the stack is valid
-  eval "fn_is_integer \"\${${1}_begin}\"" || fn_abort 1 "${var_lineno-$LINENO}" "fn_stack_exists:$LINENO: '${1}_begin' is not an integer"
-  eval "fn_is_integer \"\${${1}_end}\"" || fn_abort 1 "${var_lineno-$LINENO}" "fn_stack_exists:$LINENO: '${1}_end' is not an integer"
+  eval "fn_is_uint \"\${${1}_begin}\"" || fn_abort 1 "${var_lineno-$LINENO}" "fn_stack_exists:$LINENO: '${1}_begin' is not an integer"
+  eval "fn_is_uint \"\${${1}_end}\"" || fn_abort 1 "${var_lineno-$LINENO}" "fn_stack_exists:$LINENO: '${1}_end' is not an integer"
   eval "test \"\${${1}_begin}\" -lt \"\${${1}_end}\"" || fn_abort 1 "${var_lineno-$LINENO}" "fn_stack_exists:$LINENO: '${1}_begin' >= '${1}_end'"
   eval "test \"\${${1}_begin}\" -ge 0" || fn_abort 1 "${var_lineno-$LINENO}" "fn_stack_exists:$LINENO: '${1}_begin' < 0"
 } # fn_stack_exists
@@ -1194,7 +1287,7 @@ fn_fmt_array()
   # s/\${1}\\\\\\\$\${4}\${2}/\\\$/g
   # s/[\x01-\x08]/${1}${2}&${4}${2}/g
   fn_locals_declare 'var_res' 'var_fmt' 'var_script'
-  var_script='{
+  var_script='
   :begin
   $bend
   N
@@ -1238,8 +1331,7 @@ fn_fmt_array()
   s/\x1f/\${1}\${2}\\\\x1F\${4}\${2}/g
   s/\x7f/\${1}${2}\\\\x7F${4}${2}/g
   s/^x/\${1}\${2}\\"\${4}\${2}/
-  s/x$/\${4}\${1}\${2}\\"\${4}/
-}'
+  s/x$/\${4}\${1}\${2}\\"\${4}/'
   var_res='"['
   while test "$#" -gt 0; do
     var_fmt=`printf 'x%sx' "$1" | LC_ALL=C sed "$var_script"` || return "$?"
@@ -1387,9 +1479,15 @@ set x ${var_dir}"
   fn_locals_release
 } # fn_create_directory_recursive
 
-######################
-# CHECK DEPENDENCIES #
-######################
+#################
+# CONFIGURATION #
+#################
+# Enable verbose logs
+opt_verbose=yes
+
+# Rust nightly version used by `cargo fmt`
+opt_rust_nightly_version=2025-06-27
+
 # Exit script on error
 set -e || fn_abort "$?" "$LINENO" "command 'set -e' failed with status $?"
 
@@ -1398,6 +1496,12 @@ set -u || fn_abort "$?" "$LINENO" "command 'set -u' failed with status $?"
 
 # Disable glob expansion, ex: ./*
 set -f || fn_abort "$?" "$LINENO" "command 'set -f' failed with status $?"
+
+######################
+# CHECK DEPENDENCIES #
+######################
+test "${PATH+y}" || fn_abort "$?" "$LINENO" "variable 'PATH' is undefined"
+test "${PATH_SEPARATOR+y}" || fn_abort "$?" "$LINENO" "variable 'PATH_SEPARATOR' is undefined"
 
 # Check if the `sed` is installed
 cmd_sed=
@@ -1424,7 +1528,7 @@ Please install it by running: '${cmd_cargo}' install --locked dprint"
 
 # Check if the cargo-deny is installed
 cmd_cargo_deny=
-cmd_cargo_deny=`fn_path_lookup dprint 2>&1` || fn_abort "$?" "$LINENO" "${cmd_cargo_deny}
+cmd_cargo_deny=`fn_path_lookup cargo-deny 2>&1` || fn_abort "$?" "$LINENO" "${cmd_cargo_deny}
 Please install it by running: '${cmd_cargo}' install --locked cargo-deny"
 
 # Check if the shellcheck is installed
@@ -1435,16 +1539,21 @@ please visit https://github.com/koalaman/shellcheck?tab=readme-ov-file#installin
 #########################################
 # FORMAT CODE AND CHECK VULNERABILITIES #
 #########################################
+# Convert relative path to absolute path
+fn_absolute_path var_basedir "${var_basedir}/.." "$LINENO"
 
 # Make sure we are in the project root directory
-fn_cd "${var_basedir}/.." "$LINENO"
-fn_current_dir 'var_basedir' "$LINENO"
+fn_cd "${var_basedir}" "$LINENO"
+fn_is_file "${var_basedir}/Cargo.toml" "$LINENO"
 
 # Format shell scripts
-fn_exec "$LINENO" "${cmd_shellcheck}" --enable=all --severity=style ./scripts/check.sh
+fn_exec "$LINENO" "${cmd_shellcheck}" \
+  --enable=all \
+  --severity=style \
+  "${var_basedir}/scripts/check.sh"
 
 # Format rust code
-fn_exec "$LINENO" "${cmd_cargo}" +nightly fmt --all
+fn_exec "$LINENO" "${cmd_cargo}" "+nightly-${opt_rust_nightly_version}" fmt --all
 
 # Format TOML, json markdown and dockerfiles
 fn_exec "$LINENO" "${cmd_dprint}" fmt
