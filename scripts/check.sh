@@ -57,8 +57,8 @@ test ${CLICOLOR_FORCE+y} && ( (unset CLICOLOR_FORCE) || exit 1) > /dev/null 2>&1
 test ${GREP_OPTIONS+y} && ( (unset GREP_OPTIONS) || exit 1) > /dev/null 2>&1 && unset GREP_OPTIONS || :
 
 # Ensure that fds 0, 1, and 2 are open.
-if (exec 3>&0) 2> /dev/null; then :; else exec 0< /dev/null; fi
-if (exec 3>&1) 2> /dev/null; then :; else exec 1> /dev/null; fi
+if (exec 3>&0) 2>/dev/null; then :; else exec 0< /dev/null; fi
+if (exec 3>&1) 2>/dev/null; then :; else exec 1> /dev/null; fi
 if (exec 3>&2)            ; then :; else exec 2> /dev/null; fi
 
 # The user is always right.
@@ -306,7 +306,7 @@ fn_is_uint ()
   test "$#" -gt 0 || { printf '%s\n' "fn_is_uint:$LINENO: no args" >&2; return 127; }
   while test "$#" -gt 1
   do
-    fn_is_uint "${1}"|| return "$?"
+    fn_is_uint "${1}" || return "$?"
     shift || { printf '%s\n' "fn_is_uint:$LINENO: shift failed" >&2; return 125; }
   done
   test "x${1}" != x > /dev/null 2>&1 || return 2
@@ -321,8 +321,8 @@ fn_is_uint ()
 # fn_locals_declare <VAR1> <VAR2> ... <VARN>
 # ----------------------
 # Portably define local variables, behaves like 'local <varname>', except
-# it also can be used outside function body. Values are store variable in
-# a global stack prefixed with `_var_local_$STACKSIZE`.
+# it also can be used outside function body. Values are stored in a global
+# stack prefixed with `_var_local_$STACKSIZE`.
 # Use `fn_locals_declare <varname>` to declare one or more locals
 # Use `fn_locals_release` to release locals and if needed restored previous
 # global values.
@@ -554,11 +554,11 @@ fn_single_quote ()
   while test "$#" -gt 0
   do
     # 'x<STRING>x' forces 'sed' to preserve leading and trailing spaces.
-    printf 'x%sx' "${1}" | LC_ALL=C sed "{
+    printf x%sx "${1}" | LC_ALL=C sed "
       s/'/'\\\\''/g
       1s/^x/'/
       \$s/x\$/'/
-    }" || return "$?"
+    " || return "$?"
     test "$#" -gt 1 || return 0
     printf ' ' && shift || return "$?"
   done
@@ -583,7 +583,7 @@ fn_dquote_escape ()
   echo "fn_dquote_escape:$LINENO: no args" >&2; return 127
 } # fn_dquote_escape
 
-# fn_assign_args <VARNAME> [...ARGS]
+# fn_quote_assign <VARNAME> [...ARGS]
 # ----------------------
 # Escape and quote the provided arguments, then assign it
 # to VARNAME
@@ -594,12 +594,12 @@ fn_quote_assign ()
   then eval "shift && ${1}=\`fn_quote_args \"\$@\"\`" || return 125
   else eval "${1}=" || return 125
   fi
-} # fn_assign_args
+} # fn_quote_assign
 
 # fn_eval_assign <VARNAME> <COMMAND> [...ARGS]
 # ----------------------
-# Escape and quote the provided arguments, then assign it
-# to VARNAME
+# Similar to `varname=$(command)`, except it preserves leading and trailing
+# spaces
 fn_eval_assign ()
 {
   test "$#" -gt 1 || return 127;
@@ -618,15 +618,22 @@ fn_eval_assign ()
   eval "${1}=\`eval \"\$2\"\` && eval \"${1}=\$${1}\"" || return 125
 } # fn_eval_assign
 
-# fn_map <function> [items...]
-# ---------------
-# map values
+# fn_map <CODE> [...VALUE]
+# ----------------------
+# Assign each <VALUE> to $1 and eval <CODE>.
 fn_map ()
 {
-  m="${1}"
-  shift
-  for v; do eval "${m}"; done
-} # fn_map
+  test "$#" -gt 0  || { echo "fn_map:$LINENO: no args" >&2; return 127; }
+  test "$#" -gt 1 || return 0;
+  fn_locals_declare var_code
+  var_code=`fn_single_quote "$1"` || { fn_locals_release "$?"; return "$?"; }
+  eval "fn_locals_release
+while test \"\$#\" -gt 1; do
+  shift > /dev/null 2>&1 || return 125;
+  eval ${var_code}
+done
+return 0"
+}
 
 # fn_quote_args [args...]
 # ---------------
@@ -634,32 +641,21 @@ fn_map ()
 fn_quote_args ()
 {
   # shellcheck disable=SC2310
-  printf '%s' "$(fn_single_quote "${1}" 2>&1 || true)"
-  shift
-  for v; do
-    # shellcheck disable=SC2310
-    printf ' %s' "$(fn_single_quote "${v}" 2>&1 || true)";
+  while test "$#" -gt 0; do
+    fn_single_quote "${1}" || return "$?"
+    test "$#" -gt 1 || return 0
+    printf ' '
+    shift || return "$?"
   done
 } # fn_quote_args
-
-# fn_join <SEPARATOR> [values...]
-# ---------------
-# join values
-fn_join ()
-{
-    s="${1}"
-    printf '%s' "${2}"
-    shift 2
-    for v; do printf '%s%s' "${s}" "${v}"; done
-} # fn_join
 
 # fn_check_varname <VARNAME>
 # ----------------------
 # Check if <VARNAME> is a valid shell variable name
 fn_check_varname ()
 {
-  test "$#" -gt 0 || fn_abort 127 "${var_lineno-$LINENO}" "fn_check_varname:$LINENO: no arguments"
-  test "x${1}" != 'x' || return 1
+  test "$#" -gt 0 || { echo "fn_check_varname:$LINENO: no arguments" >&2; return 127; }
+  test "x${1}" != x || return 1
   # Avoid depending upon Character Ranges.
   # https://www.gnu.org/savannah-checkouts/gnu/autoconf/manual/autoconf-2.72/html_node/Special-Shell-Variables.html
   case $1 in
@@ -716,7 +712,11 @@ fn_detect_arch ()
   then printf '%s\n' "${var_arch}"
   else
     eval "${1}=\${var_arch}" ||
-    { printf '%s\n' "fn_check_varname:$LINENO: eval failed with status $?" >&2; fn_locals_release; return 125; }
+    {
+      printf '%s\n' "fn_check_varname:$LINENO: eval failed with status $?" >&2
+      fn_locals_release
+      return 125
+    }
   fi
   fn_locals_release
 } # fn_detect_arch
@@ -727,25 +727,24 @@ fn_detect_arch ()
 # shellcheck disable=SC2329
 fn_current_dir ()
 {
-    fn_set_status 0
-    if command -v pwd > /dev/null 2>&1
-    then printf '%s' "$(pwd -P 2>&1 || true)" || fn_set_status "$?"
-    elif test -z ${PWD+x}
-    then printf '%s' "${PWD}" || fn_set_status "$?"
-    else fn_set_status 1
-    fi
+  if pwd -P 2>&1
+  then return 0
+  elif test "${PWD+y}"
+  then printf %s "$PWD"
+  else return 125
+  fi
 } # fn_current_dir
 
 # fn_is_directory <PATH> <LINENO>
 # ----------------------------------------
-# Check if the provided PATH is a directory and is readable by current user.
+# Check if the provided PATH is a directory and is readable.
 fn_is_directory ()
 {
-  test "$#" -gt 0 || fn_abort 127 "${var_lineno-$LINENO}" "fn_is_directory:$LINENO: missing operand"
+  test "$#" -gt 0 || fn_abort 127 "${var_lineno-$LINENO}" "fn_is_directory:$LINENO: missing directory path"
   test "$#" -gt 1 || fn_abort 127 "${var_lineno-$LINENO}" "fn_is_directory:$LINENO: missing LINENO"
-  test "$#" -eq 2 || fn_abort 127 "${var_lineno-$LINENO}" "fn_is_directory:$LINENO: extra operand '${3}'"
   fn_is_uint "${2}" || fn_abort "$?" "${var_lineno-$LINENO}" "fn_is_directory:$LINENO: invalid LINENO '${2}'"
-  test "x${1}" != x || fn_abort 127 "${2}" "fn_is_directory:$LINENO: provided path is empty"
+  test "$#" -eq 2 || fn_abort 127 "${2}" "fn_is_directory:$LINENO: extra operand '${3}'"
+  test "x${1}" != x || fn_abort 127 "${2}" "fn_is_directory:$LINENO: empty path"
   test -e "${1}" || fn_abort 1 "${2}" "directory not found '${1}'"
   test -d "${1}" || fn_abort 1 "${2}" "not a directory '${1}'"
   test -r "${1}" || fn_abort 1 "${2}" "user doesn't have permission to read the directory '${1}'"
@@ -756,19 +755,14 @@ fn_is_directory ()
 # Check if the provided PATH is a file and is readable by current user.
 fn_is_file ()
 {
-  test "$#" -gt 0 || fn_abort 127 "${var_lineno-$LINENO}" "fn_is_file:$LINENO: missing operand"
-  test "$#" -lt 3 || fn_abort 127 "${var_lineno-$LINENO}" "fn_is_file:$LINENO: extra operand '${3}'"
-  if test "$#" -eq 1
-  then :
-    set x "${1}" "${var_lineno-$LINENO}" || fn_abort "$?" "${var_lineno-$LINENO}" "fn_is_file:$LINENO: builtin command failed
-set x '${1}' '${var_lineno-$LINENO}'"
-    shift || fn_abort "$?" "${var_lineno-$LINENO}" "fn_is_file:$LINENO: 'shift' command failed"
-  else :
-  fi
+  test "$#" -gt 0 || fn_abort 127 "${var_lineno-$LINENO}" "fn_is_file:$LINENO: missing directory path"
+  test "$#" -gt 1 || fn_abort 127 "${var_lineno-$LINENO}" "fn_is_file:$LINENO: missing LINENO"
   fn_is_uint "${2}" || fn_abort 127 "${var_lineno-$LINENO}" "fn_is_file:$LINENO: invalid lineno '${2}'"
+  test "$#" -eq 2 || fn_abort 127 "${2}" "fn_is_file:$LINENO: extra operand '${3}'"
+  test "x${1}" != x || fn_abort 127 "${2}" "fn_is_file:$LINENO: empty path"
   test -e "$1" || fn_abort 1 "${2}" "file not found '${1}'"
   test -f "$1" || fn_abort 1 "${2}" "not a file '${1}'"
-  test -r "$1" || fn_abort 1 "${2}" "no read permission of file '${1}'"
+  test -r "$1" || fn_abort 1 "${2}" "cannot read the file '${1}'"
 } # fn_is_directory
 
 # fn_var_copy <DEST_VARNAME> <SRC_VARNAME>
@@ -810,14 +804,14 @@ fn_var_exists ()
 
 # fn_stack_exists <STACKNAME>
 # ----------------------
-# Check if the STACKNAME exists and is valid, returns status 0 if stack
-# exists and is valid, status 1 if doesn't exists, exit if stack is invalid.
+# Check if the STACKNAME exists and is valid, abort if stack doesn't exists or
+# name is invalid.
 fn_stack_exists ()
 {
   test "$#" -gt 0 || fn_abort 1 "${var_lineno-$LINENO}" "fn_stack_exists:$LINENO: no arguments"
   test "$#" -eq 1 || fn_abort 1 "${var_lineno-$LINENO}" "fn_stack_exists:$LINENO: extra operand '$2'"
   # Check parameters
-  test "x${1}" != 'x' || fn_abort 1 "${var_lineno-$LINENO}" "fn_stack_exists:$LINENO: STACKNAME is empty"
+  test "x${1}" != x || fn_abort 1 "${var_lineno-$LINENO}" "fn_stack_exists:$LINENO: STACKNAME is empty"
   fn_check_varname "${1}" || fn_abort 1 "${var_lineno-$LINENO}" "fn_stack_exists:$LINENO: invalid stack name '${1}'"
   # check if the stack is empty
   eval "fn_var_exists '${1}_begin' '${1}_end'" || return 1
@@ -1142,7 +1136,8 @@ fn_locals_release && ${var_varname}=\$2"
 
 # fn_fmt_var <VARNAME> <FMT> [...ARGS]
 # ----------------------------------------
-# Logs to STDOUT only if `--quiet` is not set.
+# Calls `fn_printf FMT ARGS` and assign the output to VARNAME,
+# preserving leading and trailing spaces.
 fn_fmt_var()
 {
   test "$#" -gt 1 || fn_abort 127 "${var_lineno-$LINENO}" "fn_fmt_var:$LINENO: missing operand"
@@ -1155,7 +1150,7 @@ fn_fmt_var()
 
 # fn_fmt_filesize <VARNAME> <SIZE_IN_BYTES>
 # ----------------------------------------
-# Convert bytes to a humam friendly kb or mb string.
+# Convert bytes to kylobytes or megabytes, rounded up.
 fn_fmt_filesize ()
 {
   test "$#" -eq 2 || fn_abort 1 "${var_lineno-$LINENO}" "fn_fmt_filesize:$LINENO: expected 2 arguments, provided $#"
@@ -1168,15 +1163,13 @@ fn_fmt_filesize ()
     fn_arith "$1" '(' 1023 '+' "$2" ')' '/' 1024 || fn_abort 1 "${var_lineno-$LINENO}" "fn_fmt_filesize:$LINENO: fn_arith failed"
     eval "$1=\${${1}}KB" || fn_abort 1 "${var_lineno-$LINENO}" "fn_fmt_filesize:$LINENO: eval failed"
   fi
-} #fn_fmt_filesize
+} # fn_fmt_filesize
 
-# fn_fmt_array <VARNAME> <FMT> [...ARGS]
+# fn_fmt_array [...ARGS]
 # ----------------------------------------
-# Logs to STDOUT only if `--quiet` is not set.
+# Format ARGS as JSON string array
 fn_fmt_array()
 {
-  # s/\${1}\\\\\\\$\${4}\${2}/\\\$/g
-  # s/[\x01-\x08]/${1}${2}&${4}${2}/g
   fn_locals_declare 'var_res' 'var_fmt' 'var_script'
   var_script='
   :begin
@@ -1310,13 +1303,13 @@ fn_create_directory_recursive ()
   test "x${1}" != x/ || return 0
 
   # convert <PATH> to absolute
-  fn_locals_declare 'var_lineno' 'var_dir'
+  fn_locals_declare var_lineno var_dir
   var_lineno=$2
   var_dir=
-  fn_absolute_path 'var_dir' "${1}" "${var_lineno}"
+  fn_absolute_path var_dir "${1}" "${var_lineno}"
 
   # split path components
-  fn_ifs_split 'var_dir' '/' "${var_dir}" || fn_abort "$?" "${var_lineno}" "fn_create_directory_recursive:$LINENO: fn_ifs_split failed"
+  fn_ifs_split var_dir '/' "${var_dir}" || fn_abort "$?" "${var_lineno}" "fn_create_directory_recursive:$LINENO: fn_ifs_split failed"
   test "x${var_dir}" != x || fn_abort "$?" "${var_lineno}" "fn_create_directory_recursive:$LINENO: invalid path '${2}'"
   eval "set x ${var_dir}" || fn_abort "$?" "${var_lineno}" "fn_create_directory_recursive:$LINENO: eval failed
 set x ${var_dir}"
